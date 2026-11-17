@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intercambio Navideño - Secret Santa</title>
+    <style>
+        :root {
+            --primary: #d62828;
+            --primary-dark: #9e1b1b;
+            --secondary: #2b9348;
+            --bg: #f8f9fa;
+            --card: #ffffff;
+            --text: #212529;
+        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body {
+            background: linear-gradient(135deg, #1d3557 0%, #457b9d 100%);
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: var(--text);
+        }
+        .container {
+            background: var(--card);
+            width: 100%;
+            max-width: 500px;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.25);
+            text-align: center;
+        }
+        h1 { color: var(--primary); margin-top: 0; font-size: 1.8rem; }
+        p { color: #555; line-height: 1.5; }
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 12px;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            font-size: 1rem;
+            resize: vertical;
+            margin: 15px 0;
+        }
+        textarea:focus { outline: none; border-color: var(--primary); }
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.2s, transform 0.1s;
+        }
+        button:hover { background: var(--primary-dark); }
+        button:active { transform: scale(0.98); }
+        .btn-copy {
+            background: var(--secondary);
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            width: auto;
+        }
+        .btn-copy:hover { background: #1e6b34; }
+        .link-list {
+            margin-top: 25px;
+            text-align: left;
+        }
+        .link-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg);
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #e9ecef;
+        }
+        .link-item span { font-weight: 600; font-size: 1.05rem; }
+        .reveal-box {
+            background: #fff3cd;
+            border: 2px dashed #ffc107;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+        }
+        .target-name {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--primary);
+            margin: 10px 0 0 0;
+            display: none;
+        }
+        .hidden { display: none; }
+        .note { font-size: 0.85rem; color: #777; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- VISTA 1: ORGANIZADOR -->
+    <div id="organizer-view">
+        <h1>🎅 Sorteo Secret Santa</h1>
+        <p>Escribe los nombres de los participantes (uno por línea). El sistema creará un enlace secreto para cada persona.</p>
+        <textarea id="names-input" placeholder="Ejemplo:&#10;Evden&#10;Esmeralda&#10;Carlos&#10;Sofía"></textarea>
+        <button onclick="generateLinks()">Generar Enlaces Secretos</button>
+        <div id="links-container" class="link-list"></div>
+    </div>
+
+    <!-- VISTA 2: PARTICIPANTE (AL ABRIR UN LINK) -->
+    <div id="participant-view" class="hidden">
+        <h1>🎁 ¡Hola, <span id="giver-name"></span>!</h1>
+        <p>Tu sorteo de Secret Santa está listo. Asegúrate de que nadie esté mirando tu pantalla.</p>
+        
+        <div class="reveal-box">
+            <button id="reveal-btn" onclick="revealTarget()">👀 Ver a quién me tocó regalar</button>
+            <p id="result-label" class="hidden" style="margin:0; font-weight:600;">Te tocó darle regalo a:</p>
+            <div id="target-name" class="target-name"></div>
+        </div>
+
+        <p class="note">⚠️ Guarda bien este resultado. No compartas tu enlace con nadie más.</p>
+    </div>
+</div>
+
+<script>
+    // Codificación UTF-8 segura a Base64 para soportar acentos y ñ
+    function encodeData(obj) {
+        const json = JSON.stringify(obj);
+        return btoa(unescape(encodeURIComponent(json)));
+    }
+
+    function decodeData(str) {
+        const json = decodeURIComponent(escape(atob(str)));
+        return JSON.parse(json);
+    }
+
+    // Algoritmo Fisher-Yates para mezclar aleatoriamente
+    function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+    }
+
+    function generateLinks() {
+        const rawText = document.getElementById('names-input').value;
+        // Limpiar líneas vacías y eliminar duplicados exactos
+        const names = [...new Set(
+            rawText.split('\n')
+                   .map(n => n.trim())
+                   .filter(n => n.length > 0)
+        )];
+
+        if (names.length < 3) {
+            alert("Por favor ingresa al menos 3 participantes distintos.");
+            return;
+        }
+
+        // Mezclamos la lista y formamos un ciclo cerrado (A->B, B->C, ..., Z->A)
+        // Esto garantiza: nadie se repite, nadie se toca a sí mismo y todos reciben 1 regalo.
+        const shuffled = shuffle([...names]);
+        const assignments = [];
+
+        for (let i = 0; i < shuffled.length; i++) {
+            const giver = shuffled[i];
+            const receiver = shuffled[(i + 1) % shuffled.length];
+            assignments.push({ giver, receiver });
+        }
+
+        // Ordenar alfabéticamente para que el organizador no deduzca el ciclo por el orden
+        assignments.sort((a, b) => a.giver.localeCompare(b.giver));
+
+        const baseUrl = window.location.href.split('?')[0];
+        const container = document.getElementById('links-container');
+        container.innerHTML = '<h3>Enlaces generados (envía cada uno en privado):</h3>';
+
+        assignments.forEach(pair => {
+            const token = encodeData({ g: pair.giver, r: pair.receiver });
+            const link = `${baseUrl}?d=${encodeURIComponent(token)}`;
+
+            const item = document.createElement('div');
+            item.className = 'link-item';
+            item.innerHTML = `
+                <span>${pair.giver}</span>
+                <button class="btn-copy" onclick="copyLink(this, '${link}')">Copiar link</button>
+            `;
+            container.appendChild(item);
+        });
+    }
+
+    function copyLink(btn, link) {
+        navigator.clipboard.writeText(link).then(() => {
+            const originalText = btn.innerText;
+            btn.innerText = "¡Copiado!";
+            setTimeout(() => btn.innerText = originalText, 2000);
+        });
+    }
+
+    function revealTarget() {
+        document.getElementById('reveal-btn').style.display = 'none';
+        document.getElementById('result-label').classList.remove('hidden');
+        document.getElementById('target-name').style.display = 'block';
+    }
+
+    // Al cargar la página, verificar si viene un parámetro ?d= en la URL
+    window.onload = function() {
+        const params = new URLSearchParams(window.location.search);
+        const dataParam = params.get('d');
+
+        if (dataParam) {
+            try {
+                const decoded = decodeData(dataParam);
+                document.getElementById('organizer-view').classList.add('hidden');
+                document.getElementById('participant-view').classList.remove('hidden');
+                document.getElementById('giver-name').innerText = decoded.g;
+                document.getElementById('target-name').innerText = decoded.r;
+            } catch (e) {
+                alert("El enlace es inválido o está incompleto.");
+            }
+        }
+    };
+</script>
+
+</body>
+</html>
